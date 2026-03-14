@@ -1,234 +1,350 @@
 """
-Neuro Agent - Desktop Overlay UI
-Floating always-on-top panel for Carter Sciences / neuro.reccy.dev
+W — Chay Carter's Personal Assistant
+Desktop overlay UI: always-on-top floating panel
+Carter Sciences / neuro.reccy.dev
 """
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import scrolledtext
-import threading
 import queue
-import asyncio
 from datetime import datetime
 
 
-# Neuro brand colours
-BRAND_BG = "#0D0D0D"
-BRAND_SURFACE = "#1A1A2E"
-BRAND_ACCENT = "#7B2FBE"
-BRAND_ACCENT_LIGHT = "#9D4EDD"
-BRAND_TEXT = "#E8E8F0"
-BRAND_MUTED = "#6B6B8A"
-BRAND_SUCCESS = "#00C896"
-BRAND_WARNING = "#FFB347"
-BRAND_ERROR = "#FF4757"
+# Colour palette — clean dark with neuro purple accent
+BG         = "#0A0A0F"
+SURFACE    = "#13131F"
+SURFACE2   = "#1C1C2E"
+ACCENT     = "#7B2FBE"
+ACCENT_LT  = "#9D4EDD"
+ACCENT_DIM = "#4A1A7A"
+TEXT       = "#E8E8F0"
+MUTED      = "#5A5A7A"
+SUCCESS    = "#00C896"
+WARNING    = "#FFB347"
+ERROR      = "#FF4757"
+CYAN       = "#00D4FF"
 
 
-class TaskLogWidget(ctk.CTkFrame):
+class LogWidget(ctk.CTkFrame):
     def __init__(self, parent, **kwargs):
-        super().__init__(parent, fg_color=BRAND_BG, **kwargs)
-        self.log_text = ctk.CTkTextbox(
-            self,
-            fg_color=BRAND_SURFACE,
-            text_color=BRAND_TEXT,
-            font=("JetBrains Mono", 11),
-            wrap="word",
-            state="disabled",
+        super().__init__(parent, fg_color=BG, **kwargs)
+        self.box = ctk.CTkTextbox(
+            self, fg_color=SURFACE, text_color=TEXT,
+            font=("Courier New", 11), wrap="word", state="disabled",
         )
-        self.log_text.pack(fill="both", expand=True, padx=4, pady=4)
+        self.box.pack(fill="both", expand=True, padx=2, pady=2)
 
     def append(self, message: str, level: str = "info"):
-        colours = {
-            "info": BRAND_TEXT,
-            "success": BRAND_SUCCESS,
-            "warning": BRAND_WARNING,
-            "error": BRAND_ERROR,
-            "agent": BRAND_ACCENT_LIGHT,
+        colour_map = {
+            "info":    TEXT,
+            "success": SUCCESS,
+            "warning": WARNING,
+            "error":   ERROR,
+            "agent":   CYAN,
         }
         ts = datetime.now().strftime("%H:%M:%S")
-        line = f"[{ts}] {message}\n"
-        self.log_text.configure(state="normal")
-        self.log_text.tag_config(level, foreground=colours.get(level, BRAND_TEXT))
-        self.log_text.insert("end", line, level)
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
+        prefix = {"agent": "W  ", "success": "✓  ", "warning": "!  ", "error": "✗  "}.get(level, "   ")
+        line = f"{ts}  {prefix}{message}\n"
+        self.box.configure(state="normal")
+        self.box.tag_config(level, foreground=colour_map.get(level, TEXT))
+        self.box.insert("end", line, level)
+        self.box.see("end")
+        self.box.configure(state="disabled")
+
+    def clear(self):
+        self.box.configure(state="normal")
+        self.box.delete("1.0", "end")
+        self.box.configure(state="disabled")
 
 
-class StatusDot(ctk.CTkLabel):
-    """Small animated status indicator."""
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, text="●", font=("Arial", 12), **kwargs)
-        self._idle()
-
-    def _idle(self):
-        self.configure(text_color=BRAND_MUTED)
-
-    def working(self):
-        self.configure(text_color=BRAND_ACCENT_LIGHT)
-
-    def success(self):
-        self.configure(text_color=BRAND_SUCCESS)
-
-    def error(self):
-        self.configure(text_color=BRAND_ERROR)
-
-
-class NeuroOverlay(ctk.CTk):
+class WOverlay(ctk.CTk):
     def __init__(self, task_queue: queue.Queue, result_queue: queue.Queue):
         super().__init__()
 
         self.task_queue = task_queue
         self.result_queue = result_queue
 
-        # Window setup
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
 
-        self.title("Neuro Agent")
-        self.geometry("420x620+20+60")
-        self.configure(fg_color=BRAND_BG)
-        self.attributes("-topmost", True)  # Always on top
+        self.title("W")
+        self.geometry("440x680+16+50")
+        self.configure(fg_color=BG)
+        self.attributes("-topmost", True)
         self.resizable(True, True)
 
-        # Allow transparency drag (borderless feel)
-        self.overrideredirect(False)
-
-        self._build_ui()
-        self._poll_results()
+        self._build()
+        self._poll()
 
     # ------------------------------------------------------------------
-    # UI construction
+    # Build UI
     # ------------------------------------------------------------------
-    def _build_ui(self):
-        # --- Header bar ---
-        header = ctk.CTkFrame(self, fg_color=BRAND_SURFACE, corner_radius=0, height=48)
-        header.pack(fill="x", side="top")
-        header.pack_propagate(False)
+    def _build(self):
+        # ── Header ──────────────────────────────────────────────────────
+        hdr = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, height=52)
+        hdr.pack(fill="x")
+        hdr.pack_propagate(False)
 
         ctk.CTkLabel(
-            header,
-            text="⬡ NEURO",
-            font=("Arial", 15, "bold"),
-            text_color=BRAND_ACCENT_LIGHT,
-        ).pack(side="left", padx=12, pady=10)
+            hdr, text="W", font=("Arial", 22, "bold"), text_color=ACCENT_LT,
+        ).pack(side="left", padx=14, pady=8)
 
         ctk.CTkLabel(
-            header,
-            text="neuro.reccy.dev",
-            font=("Arial", 10),
-            text_color=BRAND_MUTED,
-        ).pack(side="left", padx=0, pady=10)
+            hdr, text="Chay's Assistant  ·  Carter Sciences",
+            font=("Arial", 10), text_color=MUTED,
+        ).pack(side="left")
 
-        self.status_dot = StatusDot(header)
-        self.status_dot.pack(side="right", padx=12)
+        # Status indicator
+        self._status_dot = ctk.CTkLabel(hdr, text="●", font=("Arial", 13), text_color=MUTED)
+        self._status_dot.pack(side="right", padx=12)
+        self._status_lbl = ctk.CTkLabel(hdr, text="Ready", font=("Arial", 10), text_color=MUTED)
+        self._status_lbl.pack(side="right", padx=2)
 
-        self.status_label = ctk.CTkLabel(
-            header,
-            text="Ready",
-            font=("Arial", 10),
-            text_color=BRAND_MUTED,
-        )
-        self.status_label.pack(side="right", padx=4)
+        # ── Tab bar ──────────────────────────────────────────────────────
+        tabs_frame = ctk.CTkFrame(self, fg_color=SURFACE2, corner_radius=0, height=36)
+        tabs_frame.pack(fill="x")
+        tabs_frame.pack_propagate(False)
 
-        # --- Quick action pills ---
-        pills_frame = ctk.CTkFrame(self, fg_color=BRAND_BG)
-        pills_frame.pack(fill="x", padx=10, pady=(8, 0))
+        self._active_tab = tk.StringVar(value="task")
+        tab_defs = [("Task", "task"), ("Research", "research"), ("Network", "network")]
+        self._tab_frames = {}
 
-        quick_tasks = [
-            ("Search Candidates", "search"),
-            ("Send Messages", "message"),
-            ("Connect", "connect"),
-            ("Scrape Profile", "scrape"),
-        ]
-        for label, task_type in quick_tasks:
+        for label, key in tab_defs:
             btn = ctk.CTkButton(
-                pills_frame,
-                text=label,
-                font=("Arial", 11),
-                fg_color=BRAND_SURFACE,
-                hover_color=BRAND_ACCENT,
-                text_color=BRAND_TEXT,
-                corner_radius=20,
-                height=28,
-                command=lambda t=task_type: self._quick_action(t),
+                tabs_frame, text=label, font=("Arial", 11),
+                fg_color="transparent", hover_color=ACCENT_DIM,
+                text_color=MUTED, corner_radius=0, height=36, width=100,
+                command=lambda k=key: self._switch_tab(k),
             )
-            btn.pack(side="left", padx=3, pady=4)
+            btn.pack(side="left")
+            self._tab_frames[key] = btn
 
-        # --- Task input ---
-        input_frame = ctk.CTkFrame(self, fg_color=BRAND_SURFACE, corner_radius=10)
-        input_frame.pack(fill="x", padx=10, pady=8)
+        # ── Content area ─────────────────────────────────────────────────
+        self._content = ctk.CTkFrame(self, fg_color=BG)
+        self._content.pack(fill="both", expand=True)
+
+        self._pages = {
+            "task":     self._build_task_page,
+            "research": self._build_research_page,
+            "network":  self._build_network_page,
+        }
+        self._rendered = {}
+        self._current_tab = None
+        self._switch_tab("task")
+
+    # ------------------------------------------------------------------
+    # Tab switching
+    # ------------------------------------------------------------------
+    def _switch_tab(self, key: str):
+        # Hide current
+        if self._current_tab and self._current_tab in self._rendered:
+            self._rendered[self._current_tab].pack_forget()
+        # Dim all tab buttons
+        for k, btn in self._tab_frames.items():
+            btn.configure(text_color=MUTED, fg_color="transparent")
+        # Highlight active
+        self._tab_frames[key].configure(text_color=ACCENT_LT, fg_color=ACCENT_DIM)
+
+        # Render if first visit
+        if key not in self._rendered:
+            frame = ctk.CTkFrame(self._content, fg_color=BG)
+            self._pages[key](frame)
+            self._rendered[key] = frame
+
+        self._rendered[key].pack(fill="both", expand=True)
+        self._current_tab = key
+
+    # ------------------------------------------------------------------
+    # Task page
+    # ------------------------------------------------------------------
+    def _build_task_page(self, parent):
+        # Quick action pills — 2 rows
+        row1_items = [("Research News", "research_run"), ("Draft Newsletter", "newsletter")]
+        row2_items = [("Audit Connections", "audit"), ("Connect Targets", "connect_targets"), ("Find Seniors", "find_seniors")]
+
+        for row_items in (row1_items, row2_items):
+            row = ctk.CTkFrame(parent, fg_color=BG)
+            row.pack(fill="x", padx=10, pady=(8, 0))
+            for label, key in row_items:
+                ctk.CTkButton(
+                    row, text=label, font=("Arial", 11),
+                    fg_color=SURFACE2, hover_color=ACCENT,
+                    text_color=TEXT, corner_radius=20, height=28,
+                    command=lambda k=key: self._quick(k),
+                ).pack(side="left", padx=3, pady=2)
+
+        # Input
+        input_frame = ctk.CTkFrame(parent, fg_color=SURFACE, corner_radius=10)
+        input_frame.pack(fill="x", padx=10, pady=10)
 
         ctk.CTkLabel(
-            input_frame,
-            text="Tell Neuro what to do",
-            font=("Arial", 11),
-            text_color=BRAND_MUTED,
+            input_frame, text="Tell W what to do",
+            font=("Arial", 11), text_color=MUTED,
         ).pack(anchor="w", padx=10, pady=(8, 2))
 
         self.task_input = ctk.CTkTextbox(
-            input_frame,
-            height=80,
-            fg_color=BRAND_BG,
-            text_color=BRAND_TEXT,
-            font=("Arial", 12),
-            wrap="word",
+            input_frame, height=72, fg_color=BG,
+            text_color=TEXT, font=("Arial", 12), wrap="word",
         )
         self.task_input.pack(fill="x", padx=8, pady=(0, 4))
         self.task_input.bind("<Return>", self._on_enter)
 
-        btn_row = ctk.CTkFrame(input_frame, fg_color=BRAND_SURFACE)
+        btn_row = ctk.CTkFrame(input_frame, fg_color=SURFACE)
         btn_row.pack(fill="x", padx=8, pady=(0, 8))
 
         self.run_btn = ctk.CTkButton(
-            btn_row,
-            text="▶  Run Task",
-            font=("Arial", 12, "bold"),
-            fg_color=BRAND_ACCENT,
-            hover_color=BRAND_ACCENT_LIGHT,
-            text_color="white",
-            corner_radius=8,
-            command=self._submit_task,
+            btn_row, text="▶  Run", font=("Arial", 12, "bold"),
+            fg_color=ACCENT, hover_color=ACCENT_LT, text_color="white",
+            corner_radius=8, command=self._submit,
         )
         self.run_btn.pack(side="left", padx=4)
 
-        self.stop_btn = ctk.CTkButton(
-            btn_row,
-            text="■  Stop",
-            font=("Arial", 12),
-            fg_color=BRAND_SURFACE,
-            hover_color=BRAND_ERROR,
-            text_color=BRAND_MUTED,
-            border_color=BRAND_MUTED,
-            border_width=1,
-            corner_radius=8,
-            command=self._stop_task,
-        )
-        self.stop_btn.pack(side="left", padx=4)
+        ctk.CTkButton(
+            btn_row, text="■  Stop", font=("Arial", 11),
+            fg_color=SURFACE, hover_color=ERROR, text_color=MUTED,
+            border_color=MUTED, border_width=1, corner_radius=8,
+            command=self._stop,
+        ).pack(side="left", padx=4)
 
-        # --- Task Log ---
+        ctk.CTkButton(
+            btn_row, text="Clear", font=("Arial", 11),
+            fg_color=SURFACE, hover_color=SURFACE2, text_color=MUTED,
+            corner_radius=8, command=self._clear_log,
+        ).pack(side="right", padx=4)
+
+        # Log
         ctk.CTkLabel(
-            self,
-            text="Activity Log",
-            font=("Arial", 11, "bold"),
-            text_color=BRAND_MUTED,
+            parent, text="Activity", font=("Arial", 10, "bold"), text_color=MUTED,
         ).pack(anchor="w", padx=14, pady=(4, 0))
 
-        self.log = TaskLogWidget(self)
+        self.log = LogWidget(parent)
         self.log.pack(fill="both", expand=True, padx=10, pady=(2, 10))
-
-        self.log.append("Neuro Agent initialised.", "success")
-        self.log.append("Connect your browser and give a task to begin.", "info")
+        self.log.append("W online. Ready for instructions.", "success")
 
     # ------------------------------------------------------------------
-    # Event handlers
+    # Research page
+    # ------------------------------------------------------------------
+    def _build_research_page(self, parent):
+        ctk.CTkLabel(
+            parent, text="Neuro Research", font=("Arial", 13, "bold"), text_color=ACCENT_LT,
+        ).pack(anchor="w", padx=14, pady=(14, 2))
+
+        ctk.CTkLabel(
+            parent,
+            text="Pull the latest papers, news, and company updates\nfrom arXiv, Nature, IEEE, MIT Tech Review, and more.",
+            font=("Arial", 11), text_color=MUTED, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        # Days selector
+        sel_row = ctk.CTkFrame(parent, fg_color=BG)
+        sel_row.pack(fill="x", padx=10, pady=4)
+        ctk.CTkLabel(sel_row, text="Look back:", font=("Arial", 11), text_color=MUTED).pack(side="left", padx=6)
+        self._days_var = tk.StringVar(value="7")
+        for days in ("3", "7", "14"):
+            ctk.CTkRadioButton(
+                sel_row, text=f"{days}d", variable=self._days_var, value=days,
+                font=("Arial", 11), text_color=TEXT,
+                fg_color=ACCENT, hover_color=ACCENT_LT,
+            ).pack(side="left", padx=6)
+
+        ctk.CTkButton(
+            parent, text="▶  Run Research Sweep",
+            font=("Arial", 12, "bold"), fg_color=ACCENT, hover_color=ACCENT_LT,
+            text_color="white", corner_radius=8, height=36,
+            command=lambda: self._quick("research_run"),
+        ).pack(padx=14, pady=8, fill="x")
+
+        ctk.CTkButton(
+            parent, text="Save Newsletter Draft",
+            font=("Arial", 11), fg_color=SURFACE2, hover_color=ACCENT_DIM,
+            text_color=TEXT, corner_radius=8, height=32,
+            command=lambda: self._quick("newsletter"),
+        ).pack(padx=14, pady=4, fill="x")
+
+        ctk.CTkLabel(
+            parent, text="Sources monitored:",
+            font=("Arial", 10, "bold"), text_color=MUTED,
+        ).pack(anchor="w", padx=14, pady=(12, 2))
+
+        sources = [
+            "arXiv (cs.NE · q-bio.NC · eess.SP)",
+            "Nature Neuroscience · Nature Biotechnology",
+            "IEEE Spectrum · MIT Technology Review",
+        ]
+        for s in sources:
+            ctk.CTkLabel(parent, text=f"  · {s}", font=("Arial", 10), text_color=MUTED).pack(anchor="w", padx=14)
+
+    # ------------------------------------------------------------------
+    # Network page
+    # ------------------------------------------------------------------
+    def _build_network_page(self, parent):
+        ctk.CTkLabel(
+            parent, text="Network Management", font=("Arial", 13, "bold"), text_color=ACCENT_LT,
+        ).pack(anchor="w", padx=14, pady=(14, 2))
+
+        ctk.CTkLabel(
+            parent,
+            text="Audit your connections, find senior targets,\nand manage the master spreadsheet.",
+            font=("Arial", 11), text_color=MUTED, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        actions = [
+            ("Audit connections (score all)", "audit"),
+            ("Connect with sheet targets", "connect_targets"),
+            ("Find senior followers to connect", "find_seniors"),
+            ("Read master spreadsheet summary", "sheet_summary"),
+        ]
+        for label, key in actions:
+            ctk.CTkButton(
+                parent, text=label,
+                font=("Arial", 11), fg_color=SURFACE2, hover_color=ACCENT,
+                text_color=TEXT, corner_radius=8, height=34,
+                command=lambda k=key: self._quick(k),
+            ).pack(padx=14, pady=4, fill="x")
+
+        ctk.CTkLabel(
+            parent, text="Scoring logic:",
+            font=("Arial", 10, "bold"), text_color=MUTED,
+        ).pack(anchor="w", padx=14, pady=(12, 2))
+
+        criteria = [
+            "Prioritise:  founder/C/VP/Director + neurotech company",
+            "Keep:        neurotech role or company",
+            "Review:      unclear relevance",
+            "Remove:      spam / unrelated industry",
+        ]
+        for c in criteria:
+            ctk.CTkLabel(parent, text=f"  {c}", font=("Courier New", 10), text_color=MUTED).pack(anchor="w", padx=14)
+
+    # ------------------------------------------------------------------
+    # Quick actions
+    # ------------------------------------------------------------------
+    def _quick(self, key: str):
+        days = getattr(self, "_days_var", None)
+        d = days.get() if days else "7"
+        prompts = {
+            "research_run":     f"Run a neurotech research sweep for the last {d} days. Fetch papers and news from all sources.",
+            "newsletter":       "Save the latest newsletter draft to file.",
+            "audit":            "Audit my LinkedIn connections. Score each one for neurotech relevance and flag who to remove or prioritise.",
+            "connect_targets":  "Read the master spreadsheet for target connections with status 'target'. Go through each one and send a personalised connection request.",
+            "find_seniors":     "Analyse my LinkedIn followers. Identify senior people (C-level, VP, Director, Founder) at neurotech companies that I should connect with.",
+            "sheet_summary":    "Read the master connections spreadsheet and give me a summary of the current status breakdown.",
+        }
+        instruction = prompts.get(key, key)
+        self.task_input.delete("1.0", "end")
+        self.task_input.insert("end", instruction)
+        self._switch_tab("task")
+        self._submit()
+
+    # ------------------------------------------------------------------
+    # Handlers
     # ------------------------------------------------------------------
     def _on_enter(self, event):
-        if not event.state & 0x1:  # Shift not held
-            self._submit_task()
+        if not (event.state & 0x1):
+            self._submit()
             return "break"
 
-    def _submit_task(self):
+    def _submit(self):
         text = self.task_input.get("1.0", "end").strip()
         if not text:
             return
@@ -237,48 +353,34 @@ class NeuroOverlay(ctk.CTk):
         self._set_running()
         self.task_queue.put({"type": "natural_language", "instruction": text})
 
-    def _quick_action(self, task_type: str):
-        prompts = {
-            "search": "Search LinkedIn for neurotech candidates with 3+ years experience",
-            "message": "Draft and send a personalised connection message to the last viewed LinkedIn profile",
-            "connect": "Send a connection request to the last viewed LinkedIn profile",
-            "scrape": "Extract the full profile details from the current LinkedIn tab",
-        }
-        instruction = prompts.get(task_type, task_type)
-        self.task_input.delete("1.0", "end")
-        self.task_input.insert("end", instruction)
-        self._submit_task()
-
-    def _stop_task(self):
+    def _stop(self):
         self.task_queue.put({"type": "stop"})
         self._set_idle()
-        self.log.append("Task stopped by user.", "warning")
+        self.log.append("Stopped.", "warning")
+
+    def _clear_log(self):
+        self.log.clear()
 
     def _set_running(self):
         self.run_btn.configure(state="disabled")
-        self.status_dot.working()
-        self.status_label.configure(text="Running...")
+        self._status_dot.configure(text_color=ACCENT_LT)
+        self._status_lbl.configure(text="Running...")
 
     def _set_idle(self):
         self.run_btn.configure(state="normal")
-        self.status_dot.success()
-        self.status_label.configure(text="Ready")
+        self._status_dot.configure(text_color=SUCCESS)
+        self._status_lbl.configure(text="Ready")
 
     # ------------------------------------------------------------------
-    # Result polling (checks result_queue every 200ms)
+    # Result polling
     # ------------------------------------------------------------------
-    def _poll_results(self):
+    def _poll(self):
         try:
             while True:
-                result = self.result_queue.get_nowait()
-                level = result.get("level", "info")
-                message = result.get("message", "")
-                self.log.append(message, level)
-                if result.get("done"):
+                r = self.result_queue.get_nowait()
+                self.log.append(r.get("message", ""), r.get("level", "info"))
+                if r.get("done"):
                     self._set_idle()
         except queue.Empty:
             pass
-        self.after(200, self._poll_results)
-
-    def post_result(self, message: str, level: str = "info", done: bool = False):
-        self.result_queue.put({"message": message, "level": level, "done": done})
+        self.after(150, self._poll)

@@ -1,11 +1,12 @@
 """
-Neuro Agent - Claude AI Brain
-Interprets natural language instructions and orchestrates browser tasks.
+W — Chay Carter's Personal Assistant
+AI brain: interprets instructions, plans actions, orchestrates browser + research + spreadsheet tasks.
 """
 
 import asyncio
 import json
 import os
+import re
 from typing import Any, Callable
 
 import anthropic
@@ -13,131 +14,278 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SYSTEM_PROMPT = """You are Neuro, an AI recruitment assistant for Carter Sciences and neuro.reccy.dev.
-You help Chay Carter automate LinkedIn recruitment tasks: searching for candidates,
-sending personalised messages, connecting with people, and gathering profile data.
+# -----------------------------------------------------------------------
+# W's full identity and deep context
+# -----------------------------------------------------------------------
+SYSTEM_PROMPT = """You are W — the personal AI assistant to Chay Carter.
 
-You control a real browser. When given a task, break it into precise browser actions.
-Always write messages that sound human, warm, and specific — never generic or spammy.
-Personalise outreach using the candidate's actual name, role, and company.
+## Who Chay is
 
-You respond with a JSON array of actions. Each action has:
-  { "action": "<action_name>", "params": { ... }, "description": "<what you're doing>" }
+Chay Carter. Founder of Carter Sciences, co-founder of Reccy Neuro. Based in Mexico City.
+20 years specialist recruitment across trading technology, energy/infrastructure, and life sciences.
+Now fully focused on neurotech. Not a scientist — a recruiter and operator with a commercial lens on a technical market.
 
-Available actions:
-- navigate_to_tab       { "url_contains": "linkedin.com/in" }  — focus a tab matching URL
-- get_current_url       {}                                      — read current URL
-- get_page_text         {}                                      — extract visible text
-- get_profile_data      {}                                      — extract LinkedIn profile fields
-- type_text             { "selector": "...", "text": "..." }    — type into a field
-- click_element         { "selector": "...", "description": "..." }
-- search_linkedin       { "query": "...", "filters": {...} }    — run a LinkedIn people search
-- send_connection_req   { "note": "..." }                       — send connection request with note
-- send_message          { "recipient_name": "...", "message": "..." }
-- scroll_page           { "direction": "down", "amount": 500 }
-- wait                  { "ms": 800 }                          — natural pause
-- read_messages         {}                                      — read unread LinkedIn messages
-- get_open_tabs         {}                                      — list all open browser tabs
-- done                  { "summary": "..." }                    — task complete
+**Carter Sciences** — specialist neurotech headhunting and advisory. Contingent, contract, and executive search.
+Also home to 1:1 Career Advisory and W/Werk (AI recruitment assistant, in development with Donte Hobbs).
 
-Rules:
-1. Always start by understanding which tab to use (get_open_tabs or navigate_to_tab).
-2. Use get_profile_data before sending any message — personalise with real details.
-3. Add wait actions between interactions (600–1500ms) for natural pacing.
-4. Messages must sound like they are from Chay Carter, founder of Carter Sciences.
-5. Respond ONLY with a valid JSON array of actions — no prose, no markdown code fences.
+**Reccy Neuro** (co-founded with Max Kelly) — neurotech job board and market intelligence platform.
+Always positioned as intelligence, not just a job board. Feeds leads into Carter Sciences.
+
+**The Neuro Newsletter / Substack** — theneurotechnewsletter.substack.com — weekly, monetised.
+Also a separate bi-weekly newsletter (~1,000 subscribers), monetised.
+Monthly interview articles on cartersciences.com — credibility and lead gen, not monetised.
+Regular LinkedIn content (personal + Reccy Neuro accounts).
+Medium / NeurotechX contribution monthly.
+Podcast appearances — opinion leadership positioning.
+
+**Chay's contact:** chay@cartersciences.com | cartersciences.com | linkedin.com/in/chay-carter/
+
+## Chay's voice and tone
+
+Casual but punchy. Professional without being corporate. Conversational. Direct.
+Talks about neurotech from the market, not from a lab or lecture hall.
+Short sentences preferred. British/English spelling.
+First person for all Chay-authored content.
+
+STRICT style rules — always apply to any content you write as Chay:
+- No em dashes
+- No bold in body text (headers only)
+- No AI language: never use "delve", "leverage", "cutting-edge", "transformative", "robust", "seamless"
+- British spelling: colour, organise, specialise, recognised, etc.
+- No generic openers ("I hope this finds you well", "I wanted to reach out")
+- Connection notes: specific, warm, under 300 characters, no ask, no pitch
+
+## What Chay cares about
+
+- The patient population — what neurotech does for real people
+- Commercial realities of building in a regulated, capital-intensive market
+- The people building neurotech and what it takes to hire them
+- Ecosystem building: intelligence + media + headhunting under one roof
+- BCIs, neuromodulation, closed-loop systems — the 10-20 year vision
+
+## Network building strategy
+
+Target connections: founders, CTOs, VPs, Directors, Professors, Research Directors at neurotech companies and labs.
+Key companies: Neuralink, Synchron, Blackrock Neurotech, Paradromics, Kernel, CTRL-labs, Emotiv, Precision Neuroscience, Science Corporation, Openwater, Nalu Medical, Axoft, Arc Institute, Allen Institute, BrainGate, NeuroTechX.
+Remove: spam, unrelated industries (forex, MLM, real estate, solar panels, generic marketing).
+Master spreadsheet: shared Google Sheet with Max Kelly tracking targets, status, notes.
+
+## Available actions
+
+{ "action": "<name>", "params": { ... }, "description": "<what you're doing>" }
+
+Browser:
+- get_open_tabs          {}
+- navigate_to_tab        { "url_contains": "..." }
+- get_current_url        {}
+- get_page_text          {}
+- get_profile_data       {}
+- type_text              { "selector": "...", "text": "..." }
+- click_element          { "selector": "...", "description": "..." }
+- scroll_page            { "direction": "down|up", "amount": 500 }
+- wait                   { "ms": 800 }
+
+LinkedIn:
+- search_linkedin        { "query": "...", "filters": { "connection": "2nd", "location": "..." } }
+- send_connection_req    { "note": "..." }
+- send_message           { "recipient_name": "...", "message": "..." }
+- read_messages          {}
+- audit_connections      {}
+- remove_connection      {}
+- read_followers         {}
+
+Research:
+- run_research           { "days_back": 7 }
+- save_newsletter        {}
+
+Spreadsheet:
+- sheet_get_targets      { "status": "target" }
+- sheet_update_status    { "linkedin_url": "...", "status": "...", "notes": "..." }
+- sheet_add_record       { "name": "...", "linkedin_url": "...", "company": "...", "role": "...", "seniority": "...", "status": "target", "notes": "..." }
+- sheet_summary          {}
+
+Done:
+- done                   { "summary": "..." }
+
+## Rules
+
+1. Always call get_open_tabs first unless the tab context is clear.
+2. Before sending any message or connection request: call get_profile_data to personalise.
+3. Add wait (600-1500ms) between interactions for natural pacing.
+4. All written content must follow Chay's strict style rules above.
+5. Connection notes must be under 300 characters, specific to the person, no ask.
+6. Auditing: flag non-neurotech as "review", clear spam as "remove", neurotech senior as "prioritise".
+7. Show spreadsheet summary before acting on it.
+8. Respond ONLY with a valid JSON array of actions. No prose. No markdown fences.
 """
 
 
-class NeuroAgent:
-    def __init__(self, browser_executor: Callable, result_callback: Callable):
-        """
-        browser_executor: async callable(action_dict) -> result_dict
-        result_callback: sync callable(message, level) — sends log lines to UI
-        """
+class WAgent:
+    """W — Chay Carter's personal AI assistant."""
+
+    def __init__(
+        self,
+        browser_executor: Callable,
+        research_runner: Callable,
+        sheets_manager: Any,
+        result_callback: Callable,
+    ):
         self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.execute = browser_executor
+        self.browser = browser_executor
+        self.research = research_runner
+        self.sheets = sheets_manager
         self.log = result_callback
         self._stop_flag = False
         self.conversation_history: list[dict] = []
+        self._newsletter_draft = None
 
     def stop(self):
         self._stop_flag = True
 
+    def reset_conversation(self):
+        self.conversation_history = []
+
+    # ------------------------------------------------------------------
+    # Main task runner
+    # ------------------------------------------------------------------
     async def run_task(self, instruction: str):
-        """Main entry point: given a natural-language instruction, plan and execute."""
         self._stop_flag = False
-        self.log(f"Planning task: {instruction}", "agent")
+        self.log(f"W on it: {instruction}", "agent")
 
-        # First, get a snapshot of open tabs to give the agent context
-        tabs = await self.execute({"action": "get_open_tabs", "params": {}})
+        tabs = await self.browser({"action": "get_open_tabs", "params": {}})
+        sheet_summary = self.sheets.export_summary() if self.sheets else {}
 
-        context = f"""Current browser tabs:
+        context = f"""Open browser tabs:
 {json.dumps(tabs, indent=2)}
 
-User instruction: {instruction}
+Master spreadsheet summary:
+{json.dumps(sheet_summary, indent=2)}
 
-Respond with a JSON array of actions to complete this task."""
+Task from Chay: {instruction}
+
+Plan and return a JSON array of actions."""
 
         self.conversation_history.append({"role": "user", "content": context})
 
-        max_iterations = 10
-        for iteration in range(max_iterations):
+        for _iteration in range(12):
             if self._stop_flag:
                 self.log("Stopped.", "warning")
                 return
 
-            # Call Claude
             response = self.client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=2048,
+                max_tokens=3000,
                 system=SYSTEM_PROMPT,
                 messages=self.conversation_history,
             )
 
             raw = response.content[0].text.strip()
 
-            # Parse actions
             try:
                 actions = json.loads(raw)
             except json.JSONDecodeError:
-                # Try to extract JSON from response
-                import re
                 match = re.search(r'\[.*\]', raw, re.DOTALL)
                 if match:
-                    actions = json.loads(match.group())
+                    try:
+                        actions = json.loads(match.group())
+                    except json.JSONDecodeError:
+                        self.log(f"Could not parse plan: {raw[:200]}", "error")
+                        return
                 else:
-                    self.log(f"Could not parse agent response: {raw[:200]}", "error")
+                    self.log(f"Could not parse plan: {raw[:200]}", "error")
                     return
 
             self.conversation_history.append({"role": "assistant", "content": raw})
 
-            # Execute each action
             action_results = []
             for action in actions:
                 if self._stop_flag:
                     break
 
-                action_name = action.get("action", "")
-                description = action.get("description", action_name)
+                name = action.get("action", "")
+                desc = action.get("description", name)
                 params = action.get("params", {})
 
-                self.log(f"→ {description}", "info")
+                self.log(f"→ {desc}", "info")
 
-                if action_name == "done":
-                    self.log(action.get("params", {}).get("summary", "Task complete."), "success")
+                if name == "done":
+                    self.log(params.get("summary", "Done."), "success")
                     return
 
-                result = await self.execute({"action": action_name, "params": params})
-                action_results.append({"action": action_name, "result": result})
+                result = await self._dispatch(name, params)
+                action_results.append({"action": name, "result": result})
 
-                # Natural pacing between actions
-                if action_name != "wait":
+                if name != "wait":
                     await asyncio.sleep(0.3)
 
-            # Feed results back for next iteration if not done
             if not any(a.get("action") == "done" for a in actions):
-                feedback = f"Action results:\n{json.dumps(action_results, indent=2)}\n\nContinue or respond with a 'done' action if complete."
+                feedback = (
+                    f"Results:\n{json.dumps(action_results, indent=2)}\n\n"
+                    "Continue or use 'done' if complete."
+                )
                 self.conversation_history.append({"role": "user", "content": feedback})
 
-        self.log("Max iterations reached. Task ended.", "warning")
+        self.log("Reached iteration limit.", "warning")
+
+    # ------------------------------------------------------------------
+    # Action dispatcher
+    # ------------------------------------------------------------------
+    async def _dispatch(self, action: str, params: dict) -> Any:
+        if action == "run_research":
+            return await self._run_research(params)
+        if action == "save_newsletter":
+            return await self._save_newsletter(params)
+
+        if action == "sheet_get_targets":
+            records = self.sheets.get_targets(params.get("status", "target"))
+            return [
+                {"name": r.name, "url": r.linkedin_url, "company": r.company,
+                 "role": r.role, "seniority": r.seniority, "notes": r.notes}
+                for r in records[:20]
+            ]
+        if action == "sheet_update_status":
+            self.sheets.update_status(
+                params.get("linkedin_url", ""),
+                params.get("status", "contacted"),
+                params.get("notes", ""),
+            )
+            return {"updated": True}
+        if action == "sheet_add_record":
+            from sheets import ConnectionRecord
+            fields = ConnectionRecord.__dataclass_fields__
+            rec = ConnectionRecord(**{k: v for k, v in params.items() if k in fields})
+            self.sheets.add_record(rec)
+            return {"added": rec.name}
+        if action == "sheet_summary":
+            return self.sheets.export_summary()
+
+        # All other actions go to browser
+        return await self.browser({"action": action, "params": params})
+
+    # ------------------------------------------------------------------
+    # Research helpers
+    # ------------------------------------------------------------------
+    async def _run_research(self, params: dict) -> dict:
+        try:
+            from research import NeuroResearcher
+            researcher = NeuroResearcher(log_callback=self.log)
+            draft = await researcher.run_research(days_back=params.get("days_back", 7))
+            self._newsletter_draft = draft
+            return {
+                "papers": len(draft.top_papers),
+                "company_updates": len(draft.company_updates),
+                "industry_news": len(draft.industry_news),
+                "preview": draft.raw_markdown[:600],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _save_newsletter(self, params: dict) -> dict:
+        if not self._newsletter_draft:
+            return {"error": "No draft — run run_research first"}
+        try:
+            from research import NeuroResearcher
+            path = NeuroResearcher(log_callback=self.log).save_draft(self._newsletter_draft)
+            return {"saved": path}
+        except Exception as e:
+            return {"error": str(e)}

@@ -1,12 +1,12 @@
 """
-Neuro Agent - Browser Automation Layer
+W — Browser Automation Layer
 Connects to an existing Chrome session via CDP and executes actions.
 
 Usage:
   1. Launch Chrome with remote debugging:
      google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/neuro-chrome
 
-  2. This module connects to that session and controls your open tabs.
+  2. Log into LinkedIn in that window, then start W.
 """
 
 import asyncio
@@ -82,6 +82,9 @@ class BrowserController:
             "send_connection_req": self._send_connection_req,
             "send_message": self._send_message,
             "scroll_page": self._scroll_page,
+            "audit_connections": self._audit_connections,
+            "remove_connection": self._remove_connection,
+            "read_followers": self._read_followers,
             "wait": self._wait,
             "read_messages": self._read_messages,
         }
@@ -335,3 +338,87 @@ class BrowserController:
                 }));
         }""")
         return {"messages": messages, "count": len(messages)}
+
+    async def _audit_connections(self, params: dict) -> dict:
+        """Scrape connections list and return data for scoring."""
+        page = await self._get_page("linkedin.com")
+        if not page:
+            return {"error": "No LinkedIn tab open"}
+        self._current_page = page
+
+        await page.goto("https://www.linkedin.com/mynetwork/invite-connect/connections/")
+        await page.wait_for_load_state("networkidle", timeout=12000)
+        await asyncio.sleep(random.uniform(1.0, 1.8))
+
+        # Scroll to load more
+        for _ in range(3):
+            await page.mouse.wheel(0, 800)
+            await asyncio.sleep(random.uniform(0.6, 1.0))
+
+        connections = await page.evaluate("""() => {
+            return Array.from(document.querySelectorAll('.mn-connection-card'))
+                .slice(0, 60)
+                .map(card => ({
+                    name: card.querySelector('.mn-connection-card__name')?.innerText?.trim(),
+                    headline: card.querySelector('.mn-connection-card__occupation')?.innerText?.trim(),
+                    profile_url: card.querySelector('a.mn-connection-card__link')?.href,
+                }));
+        }""")
+        return {"connections": connections, "count": len(connections)}
+
+    async def _remove_connection(self, params: dict) -> dict:
+        """Remove connection on currently open profile page."""
+        page = self._current_page or await self._get_page("linkedin.com/in/")
+        if not page:
+            return {"error": "No profile page open"}
+        try:
+            # Click the More (…) button
+            more_btn = page.locator('button[aria-label*="More actions"]').first
+            await more_btn.click()
+            await asyncio.sleep(random.uniform(0.5, 0.9))
+            # Click Remove connection
+            remove = page.locator('span:has-text("Remove connection")').first
+            await remove.click()
+            await asyncio.sleep(0.4)
+            # Confirm
+            confirm = page.locator('button:has-text("Remove")').first
+            await confirm.click()
+            await asyncio.sleep(random.uniform(0.6, 1.0))
+            return {"removed": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    async def _read_followers(self, params: dict) -> dict:
+        """Extract followers from Chay's profile followers tab."""
+        page = await self._get_page("linkedin.com")
+        if not page:
+            return {"error": "No LinkedIn tab open"}
+        self._current_page = page
+
+        await page.goto("https://www.linkedin.com/in/chay-carter/followers/")
+        await page.wait_for_load_state("networkidle", timeout=12000)
+        await asyncio.sleep(random.uniform(1.0, 1.5))
+
+        followers = await page.evaluate("""() => {
+            return Array.from(document.querySelectorAll('.follows-recommendation-card'))
+                .slice(0, 30)
+                .map(card => ({
+                    name: card.querySelector('.follows-recommendation-card__name')?.innerText?.trim(),
+                    headline: card.querySelector('.follows-recommendation-card__occupation')?.innerText?.trim(),
+                    profile_url: card.querySelector('a')?.href,
+                }));
+        }""")
+
+        # Fallback: try generic people cards
+        if not followers:
+            followers = await page.evaluate("""() => {
+                return Array.from(document.querySelectorAll('.entity-result__item'))
+                    .slice(0, 30)
+                    .map(card => ({
+                        name: card.querySelector('.entity-result__title-text a span[aria-hidden]')?.innerText?.trim(),
+                        headline: card.querySelector('.entity-result__primary-subtitle')?.innerText?.trim(),
+                        profile_url: card.querySelector('.app-aware-link')?.href,
+                    }));
+            }""")
+
+        return {"followers": followers, "count": len(followers)}

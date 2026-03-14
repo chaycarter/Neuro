@@ -106,7 +106,7 @@ class WOverlay(ctk.CTk):
         tabs_frame.pack_propagate(False)
 
         self._active_tab = tk.StringVar(value="task")
-        tab_defs = [("Task", "task"), ("Research", "research"), ("Network", "network")]
+        tab_defs = [("Task", "task"), ("Research", "research"), ("Content", "content"), ("Network", "network"), ("Intel", "intel")]
         self._tab_frames = {}
 
         for label, key in tab_defs:
@@ -126,7 +126,9 @@ class WOverlay(ctk.CTk):
         self._pages = {
             "task":     self._build_task_page,
             "research": self._build_research_page,
+            "content":  self._build_content_page,
             "network":  self._build_network_page,
+            "intel":    self._build_intel_page,
         }
         self._rendered = {}
         self._current_tab = None
@@ -317,18 +319,146 @@ class WOverlay(ctk.CTk):
             ctk.CTkLabel(parent, text=f"  {c}", font=("Courier New", 10), text_color=MUTED).pack(anchor="w", padx=14)
 
     # ------------------------------------------------------------------
+    # Content page
+    # ------------------------------------------------------------------
+    def _build_content_page(self, parent):
+        ctk.CTkLabel(
+            parent, text="Content Studio", font=("Arial", 13, "bold"), text_color=ACCENT_LT,
+        ).pack(anchor="w", padx=14, pady=(14, 2))
+
+        ctk.CTkLabel(
+            parent,
+            text="Draft content in Chay's voice for Carter Sciences\nand Reccy Neuro across all channels.",
+            font=("Arial", 11), text_color=MUTED, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        sections = [
+            ("LinkedIn", [
+                ("Weekly wrap-up post", "li_wrap"),
+                ("Reccy Neuro role post", "li_role_post"),
+            ]),
+            ("Long-form", [
+                ("Substack article", "substack_draft"),
+                ("Interview article intro", "interview_intro"),
+                ("Newsletter edition", "newsletter_ed"),
+            ]),
+        ]
+        for section_title, items in sections:
+            ctk.CTkLabel(
+                parent, text=section_title,
+                font=("Arial", 10, "bold"), text_color=MUTED,
+            ).pack(anchor="w", padx=14, pady=(10, 2))
+            for label, key in items:
+                ctk.CTkButton(
+                    parent, text=label,
+                    font=("Arial", 11), fg_color=SURFACE2, hover_color=ACCENT,
+                    text_color=TEXT, corner_radius=8, height=32,
+                    command=lambda k=key: self._quick(k),
+                ).pack(padx=14, pady=3, fill="x")
+
+        ctk.CTkLabel(
+            parent, text="All drafts saved to data/content_drafts/",
+            font=("Arial", 10), text_color=MUTED,
+        ).pack(anchor="w", padx=14, pady=(12, 0))
+
+    # ------------------------------------------------------------------
+    # Intel page
+    # ------------------------------------------------------------------
+    def _build_intel_page(self, parent):
+        ctk.CTkLabel(
+            parent, text="Market Intelligence", font=("Arial", 13, "bold"), text_color=ACCENT_LT,
+        ).pack(anchor="w", padx=14, pady=(14, 2))
+
+        ctk.CTkLabel(
+            parent,
+            text="Reccy Neuro lens: intelligence first.\nFunding, hiring signals, vertical scans.",
+            font=("Arial", 11), text_color=MUTED, justify="left",
+        ).pack(anchor="w", padx=14, pady=(0, 10))
+
+        intel_actions = [
+            ("Weekly neurotech briefing", "weekly_briefing"),
+            ("Funding scan (>$5M, last 30 days)", "intel_funding"),
+            ("Hiring signals across neurotech", "intel_hiring"),
+        ]
+        for label, key in intel_actions:
+            ctk.CTkButton(
+                parent, text=label,
+                font=("Arial", 11), fg_color=SURFACE2, hover_color=ACCENT,
+                text_color=TEXT, corner_radius=8, height=34,
+                command=lambda k=key: self._quick(k),
+            ).pack(padx=14, pady=4, fill="x")
+
+        ctk.CTkLabel(
+            parent, text="Custom query",
+            font=("Arial", 10, "bold"), text_color=MUTED,
+        ).pack(anchor="w", padx=14, pady=(12, 2))
+
+        company_row = ctk.CTkFrame(parent, fg_color=BG)
+        company_row.pack(fill="x", padx=14, pady=4)
+
+        self._intel_input = ctk.CTkEntry(
+            company_row, placeholder_text="Company or vertical name...",
+            font=("Arial", 11), fg_color=SURFACE2, text_color=TEXT,
+            border_color=MUTED, border_width=1,
+        )
+        self._intel_input.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        ctk.CTkButton(
+            company_row, text="Deep-dive",
+            font=("Arial", 11), fg_color=ACCENT, hover_color=ACCENT_LT,
+            text_color="white", corner_radius=8, width=90,
+            command=self._intel_company,
+        ).pack(side="right")
+
+        ctk.CTkLabel(
+            parent, text="Verticals tracked:",
+            font=("Arial", 10, "bold"), text_color=MUTED,
+        ).pack(anchor="w", padx=14, pady=(12, 2))
+
+        verticals = ["Neuromodulation (DBS, SCS, VNS, TMS, tDCS, FUS)",
+                     "BCI (implantable, non-invasive, endovascular)",
+                     "Neuroimaging (MRI AI, fNIRS, EEG diagnostics)",
+                     "Digital Therapeutics / Mental Health",
+                     "Wearables & Neurofeedback",
+                     "Bioelectronics / Drug-device combos"]
+        for v in verticals:
+            ctk.CTkLabel(parent, text=f"  · {v}", font=("Arial", 10), text_color=MUTED).pack(anchor="w", padx=14)
+
+    def _intel_company(self):
+        company = self._intel_input.get().strip() if hasattr(self, "_intel_input") else ""
+        if not company:
+            return
+        instruction = f"Give me a company deep-dive on: {company}. Use the Reccy Neuro intelligence framework."
+        self.task_input.delete("1.0", "end")
+        self.task_input.insert("end", instruction)
+        self._switch_tab("task")
+        self._submit()
+
+    # ------------------------------------------------------------------
     # Quick actions
     # ------------------------------------------------------------------
     def _quick(self, key: str):
         days = getattr(self, "_days_var", None)
         d = days.get() if days else "7"
         prompts = {
-            "research_run":     f"Run a neurotech research sweep for the last {d} days. Fetch papers and news from all sources.",
-            "newsletter":       "Save the latest newsletter draft to file.",
-            "audit":            "Audit my LinkedIn connections. Score each one for neurotech relevance and flag who to remove or prioritise.",
-            "connect_targets":  "Read the master spreadsheet for target connections with status 'target'. Go through each one and send a personalised connection request.",
-            "find_seniors":     "Analyse my LinkedIn followers. Identify senior people (C-level, VP, Director, Founder) at neurotech companies that I should connect with.",
-            "sheet_summary":    "Read the master connections spreadsheet and give me a summary of the current status breakdown.",
+            # Research
+            "research_run":         f"Run a neurotech research sweep for the last {d} days. Fetch papers and news from all sources.",
+            "newsletter":           "Save the latest newsletter draft to file.",
+            # Content
+            "li_wrap":              "Draft my weekly LinkedIn wrap-up post for Carter Sciences. Ask me what happened this week if you need context.",
+            "li_role_post":         "Draft a LinkedIn role post for the Reccy Neuro feed. Ask me which role to highlight.",
+            "substack_draft":       "Draft a Substack article for The Neurotech Newsletter. Ask me for the topic and angle.",
+            "interview_intro":      "Draft an interview intro for a Carter Sciences article. Ask me who the subject is.",
+            "newsletter_ed":        "Draft the bi-weekly newsletter edition. Ask me for the key highlights.",
+            # Network
+            "audit":                "Audit my LinkedIn connections. Score each one for neurotech relevance and flag who to remove or prioritise.",
+            "connect_targets":      "Read the master spreadsheet for target connections with status 'target'. Go through each one and send a personalised connection request.",
+            "find_seniors":         "Analyse my LinkedIn followers. Identify senior people (C-level, VP, Director, Founder) at neurotech companies that I should connect with.",
+            "sheet_summary":        "Read the master connections spreadsheet and give me a summary of the current status breakdown.",
+            # Intel
+            "weekly_briefing":      "Give me my weekly neurotech briefing. 5-7 notable things ordered by relevance to Carter Sciences and Reccy Neuro.",
+            "intel_funding":        "Scan for neurotech funding rounds above $5M from the last 30 days.",
+            "intel_hiring":         "Give me hiring signals across neurotech right now. Who is scaling?",
         }
         instruction = prompts.get(key, key)
         self.task_input.delete("1.0", "end")
